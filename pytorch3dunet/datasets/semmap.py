@@ -2,6 +2,7 @@ import bz2
 from glob import glob
 import io
 import pickle
+import os
 
 import numpy as np
 import torch
@@ -36,15 +37,35 @@ class SemanticMapDataset(ConfigDataset):
     """
 
     def __init__(self, dataset_path):
-        self.filenames_ = []
-        self.filenames_ = glob(f'{dataset_path}/*/*/map_pickles/*.pbz2')
+        pred_paths = os.path.join(dataset_path, '*_learned_*', '*')
+        gt_paths = os.path.join(dataset_path, '*_gt_*', '*')
+
+        pred_filenames = glob(os.path.join(pred_paths, 'map_pickles', 'map_pickle_*.pbz2'))
+        gt_filenames = glob(os.path.join(gt_paths, 'map_pickles', 'map_pickle_*.pbz2'))
+
+        data = dict()
+
+        # TODO: do the trajectories match?
+
+        for fn in pred_filenames:
+            key = os.path.join(*fn.split('/')[-3:])
+            data[key] = {'pred': fn}
+
+        for fn in gt_filenames:
+            key = os.path.join(*fn.split('/')[-3:])
+            data[key]['gt'] = fn
+
+        self.filenames = list(data.values())
 
     def __getitem__(self, index):
-        fn = self.filenames_[index]
-        data = CPU_Unpickler(bz2.open(fn, 'rb')).load() # dict
+        pred_fn = self.filenames[index]['pred']
+        gt_fn = self.filenames[index]['gt']
         
-        pred_map = data['3d_map_cur'][0]
-        gt_map = data['3d_map'][0]
+        pred_data = CPU_Unpickler(bz2.open(pred_fn, 'rb')).load() # dict
+        gt_data = CPU_Unpickler(bz2.open(gt_fn, 'rb')).load() # dict
+
+        pred_map = pred_data['3d_map'][0]
+        gt_map = gt_data['3d_map'][0]
         
         # remove irrelevant channels
         pred_map = pred_map[[0, *range(4,pred_map.shape[0])]]
@@ -55,7 +76,7 @@ class SemanticMapDataset(ConfigDataset):
         return pred_map, gt_map
 
     def __len__(self):
-        return len(self.filenames_)
+        return len(self.filenames)
 
     @classmethod
     def create_datasets(cls, dataset_config, phase):
